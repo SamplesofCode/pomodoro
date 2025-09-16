@@ -3,34 +3,65 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ADHD Pomodoro – Minimal (v0.3 PWA)</title>
+<title>ADHD Pomodoro – Minimal (v0.3 PWA, window-height fix)</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#121821">
 <link rel="icon" href="./icons/icon-192.png">
 <!--
   ADHD Pomodoro – Minimal
-  Version: v0.3 PWA (2025-09-16)
-  PWA additions: manifest + service worker, offline caching for static assets.
+  Version: v0.3 PWA (2025-09-16) + mobile/window-height fixes
+  PWA: manifest + service worker for offline caching.
   License: MIT
 -->
 <style>
-  :root { --bg:#0b0f14; --panel:#121821; --muted:#8aa0b3; --text:#eaf2f9; --accent:#7dd3fc; --accent2:#a7f3d0; --danger:#fca5a5; --ok:#a7f3d0; }
-  * { box-sizing: border-box; }
-  html, body { height:100%; margin:0; }
-  body { background:var(--bg); color:var(--text); font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; display:flex; align-items:center; justify-content:center; padding: 16px; min-height:100vh; }
-  .app { width:100%; max-width: 1100px; background:var(--panel); border-radius: 18px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+  :root {
+    --bg:#0b0f14; --panel:#121821; --muted:#8aa0b3;
+    --text:#eaf2f9; --accent:#7dd3fc; --accent2:#a7f3d0;
+    --danger:#fca5a5; --ok:#a7f3d0;
+  }
+  * { box-sizing: border-box; margin:0; padding:0; }
+  html, body { height:100%; }
+  body {
+    background:var(--bg);
+    color:var(--text);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    display:flex; align-items:center; justify-content:center;
+    padding:16px;
+    /* Critical: use dynamic viewport height so the visible window (not full screen) is respected */
+    min-height: 100dvh;
+    /* Respect notches/status bars (iOS etc.) */
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-left: env(safe-area-inset-left, 16px);
+    padding-right: env(safe-area-inset-right, 16px);
+  }
+  .app {
+    width:100%; max-width: 1100px; background:var(--panel);
+    border-radius: 18px; padding: 20px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.35);
+  }
   h1 { margin: 0 0 12px; font-size: 1.4rem; letter-spacing:.2px; }
   .row { display:flex; gap:16px; flex-wrap: wrap; }
-  .card { flex:1; min-width: 300px; background:#0e141c; border:1px solid #1b2735; border-radius: 14px; padding:14px; }
+  .card {
+    flex:1; min-width: 300px; background:#0e141c;
+    border:1px solid #1b2735; border-radius: 14px; padding:14px;
+  }
   .muted { color: var(--muted); font-size: .9rem; }
   .timer-wrap { display:flex; align-items:center; justify-content:center; padding: 10px 0 0; }
   .ring { width: 240px; height:240px; position: relative; }
   .ring svg { transform: rotate(-90deg); }
-  .ring .label { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction: column; text-align:center; }
+  .ring .label {
+    position:absolute; inset:0; display:flex;
+    align-items:center; justify-content:center; flex-direction: column;
+    text-align:center;
+  }
   .time { font-size: 2.8rem; line-height:1; letter-spacing:.5px; }
   .phase { margin-top:6px; font-size: .95rem; color: var(--muted); }
   .controls { display:flex; gap:10px; justify-content:center; margin-top:12px; flex-wrap: wrap; }
-  button { background:#101826; color:var(--text); border:1px solid #1f2b3a; padding:8px 12px; border-radius:10px; cursor:pointer; }
+  button {
+    background:#101826; color:var(--text);
+    border:1px solid #1f2b3a; padding:8px 12px; border-radius:10px; cursor:pointer;
+  }
   button:hover { border-color:#2d3d52; }
   .primary { border-color:#2a4158; }
   .danger { border-color:#5a2a2a; color:#ffdede; }
@@ -39,16 +70,32 @@
   .preset { font-size:.9rem; }
   .grid { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
   label { display:block; font-size:.85rem; color: var(--muted); margin-bottom:4px; }
-  input[type="number"], input[type="text"], input[type="file"], select, textarea { width:100%; padding:8px; border-radius:8px; border:1px solid #1f2b3a; background:#0c1219; color:var(--text); }
+  input[type="number"], input[type="text"], input[type="file"], select, textarea {
+    width:100%; padding:8px; border-radius:8px;
+    border:1px solid #1f2b3a; background:#0c1219; color:var(--text);
+  }
   textarea { resize: vertical; min-height: 60px; }
   .inline { display:flex; gap:8px; flex-wrap: wrap; align-items:center; }
   .hint { margin-top:8px; font-size:.9rem; color: var(--accent2); }
-  .footer { margin-top: 14px; color: var(--muted); font-size:.8rem; display:flex; justify-content:space-between; gap:8px; flex-wrap: wrap; }
+  .footer {
+    margin-top: 14px; color: var(--muted); font-size:.8rem;
+    display:flex; justify-content:space-between; gap:8px; flex-wrap: wrap;
+  }
   .kpis { display:flex; gap:12px; flex-wrap: wrap; }
   .kpi { background:#0c1219; border:1px solid #1a2433; padding:8px 10px; border-radius:8px; }
-  .break-idea { margin-top:10px; background:#0c1912; border:1px solid #163121; padding:10px; border-radius:10px; }
-  .tasklist { display:flex; flex-direction: column; gap:8px; max-height: 300px; overflow:auto; padding-right: 4px; }
-  .task { display:grid; grid-template-columns: auto 1fr auto; gap:8px; align-items:start; background:#0c1219; border:1px solid #1a2433; border-radius:10px; padding:8px; }
+  .break-idea {
+    margin-top:10px; background:#0c1912; border:1px solid #163121;
+    padding:10px; border-radius:10px;
+  }
+  .tasklist {
+    display:flex; flex-direction: column; gap:8px;
+    max-height: 300px; overflow:auto; padding-right: 4px;
+  }
+  .task {
+    display:grid; grid-template-columns: auto 1fr auto;
+    gap:8px; align-items:start; background:#0c1219;
+    border:1px solid #1a2433; border-radius:10px; padding:8px;
+  }
   .task .title { font-weight: 600; }
   .pill { font-size:.75rem; border:1px solid #344a64; padding:2px 6px; border-radius:999px; color:#b9d0e6; }
   .pill.hi { border-color:#5e2a2a; color:#ffc9c9; }
@@ -57,6 +104,17 @@
   .active-select { width:100%; }
   hr.sep { border-color:#1a2433; margin:12px 0; }
   .small { font-size:.8rem; color: var(--muted); }
+
+  /* --- Mobile / short-window adjustments (width OR height) --- */
+  @media (max-width: 600px), (max-height: 700px) {
+    body {
+      align-items: flex-start;     /* push content below the notch/browser UI */
+      justify-content: center;
+      padding-top: env(safe-area-inset-top, 20px);
+    }
+    .ring { width: 200px; height: 200px; }
+    .time { font-size: 2.2rem; }
+  }
 </style>
 </head>
 <body>
@@ -191,14 +249,14 @@
 </div>
 
 <script>
-// Register the service worker (PWA)
+/* Register the service worker (PWA) */
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./service-worker.js').catch(()=>{});
 }
 </script>
 
 <script>
-// ===== The v0.3 app logic (same as delivered earlier) =====
+/* ===== v0.3 app logic with planner + logs, unchanged except viewport-safe CSS above ===== */
 (function(){
   const el = (id)=>document.getElementById(id);
   const todayISO = ()=> new Date().toISOString().slice(0,10);
@@ -259,7 +317,6 @@ if ('serviceWorker' in navigator) {
 
   function save(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
   function load(k,def){ try{ const raw=localStorage.getItem(k); return raw? JSON.parse(raw): def; }catch(e){ return def; } }
-  function persistAll(){ save(STORAGE_SETTINGS,settings); save(STORAGE_LOGS,logs); save(STORAGE_TASKS,tasks); save(STORAGE_META,meta); }
 
   settings = load(STORAGE_SETTINGS, settings);
   logs = load(STORAGE_LOGS, logs);
@@ -268,6 +325,7 @@ if ('serviceWorker' in navigator) {
   viewDate = todayISO();
 
   function ensureDateKey(obj, date){ if(!obj[date]) obj[date]=[]; }
+
   function carryUnfinished(fromDate, toDate){
     ensureDateKey(tasks, fromDate); ensureDateKey(tasks, toDate);
     const remaining = []; const moved = [];
@@ -277,17 +335,21 @@ if ('serviceWorker' in navigator) {
     save(STORAGE_TASKS, tasks);
     return moved.length;
   }
-  function maybeAutoCarry(){
+
+  // Auto-carry on day change (if enabled)
+  (function maybeAutoCarry(){
     const today = todayISO();
     if(meta.lastSeenDate !== today && settings.autoCarry){
-      const moved = carryUnfinished(meta.lastSeenDate, (d=>{const dt=new Date(d+"T00:00:00"); dt.setDate(dt.getDate()+1); return dt.toISOString().slice(0,10);})(meta.lastSeenDate));
+      const dt=new Date(meta.lastSeenDate+"T00:00:00"); dt.setDate(dt.getDate()+1);
+      const next = dt.toISOString().slice(0,10);
+      carryUnfinished(meta.lastSeenDate, next);
     }
     meta.lastSeenDate = today; save(STORAGE_META, meta);
-  }
-  maybeAutoCarry();
+  })();
 
   function fmt(sec){ const m=Math.floor(sec/60), s=sec%60; return String(m).padStart(2,"0")+":"+String(s).padStart(2,"0"); }
   function setRing(remain,total){ const ratio = total>0 ? (1 - remain/total):0; progressEl.style.strokeDashoffset = String(circumference*(1-ratio)); }
+
   function syncTimerUI(){
     const sec = state.remainingSec || (state.phase==="focus" ? settings.focusMin*60 : state.phase==="break" ? settings.breakMin*60 : 0);
     timeEl.textContent = fmt(sec);
@@ -295,17 +357,23 @@ if ('serviceWorker' in navigator) {
     setRing(state.remainingSec, state.totalSec);
     focusMinEl.value = settings.focusMin; breakMinEl.value = settings.breakMin;
     beepEl.checked = settings.beep; autoEl.checked = settings.auto;
-    document.getElementById("cycle").textContent = String(state.cycles);
-    document.getElementById("focusCount").textContent = String(state.focusDone);
-    document.getElementById("breakCount").textContent = String(state.breaksTaken);
-    startBtn.textContent = state.phase === "break" ? "Start Break" : state.phase === "focus" ? (state.running ? "Running…" : "Resume") : "Start Focus";
+    cycleEl.textContent = String(state.cycles);
+    focusCountEl.textContent = String(state.focusDone);
+    breakCountEl.textContent = String(state.breaksTaken);
+    startBtn.textContent = state.phase === "break" ? "Start Break"
+                         : state.phase === "focus" ? (state.running ? "Running…" : "Resume")
+                         : "Start Focus";
   }
+
   function renderTaskList(){
     ensureDateKey(tasks, viewDate);
-    document.getElementById("tasksDateLabel").textContent = viewDate;
-    document.getElementById("viewDateLabel").textContent = viewDate + (viewDate === todayISO() ? " (Today)" : viewDate === addDays(todayISO(),1) ? " (Tomorrow)" : "");
+    tasksDateLabel.textContent = viewDate;
+    const tdy = todayISO();
+    const tom = addDays(tdy, 1);
+    viewDateLabel.textContent = viewDate + (viewDate === tdy ? " (Today)" : viewDate === tom ? " (Tomorrow)" : "");
     taskListEl.innerHTML = "";
     const list = tasks[viewDate];
+
     list.forEach((t, idx)=>{
       const row = document.createElement("div"); row.className="task";
       const cb = document.createElement("input"); cb.type="checkbox"; cb.checked=!!t.done;
@@ -324,9 +392,9 @@ if ('serviceWorker' in navigator) {
       del.addEventListener("click", ()=>{ list.splice(idx,1); save(STORAGE_TASKS,tasks); renderTaskList(); refreshActiveTaskOptions(); });
       const mv = document.createElement("button"); mv.textContent="→"; mv.title="Move to next day";
       mv.addEventListener("click", ()=>{
-        const nd = addDays(viewDate, 1);
-        ensureDateKey(tasks, nd);
-        tasks[nd].unshift({...t});
+        const next = addDays(viewDate,1);
+        ensureDateKey(tasks, next);
+        tasks[next].unshift({...t});
         list.splice(idx,1);
         save(STORAGE_TASKS,tasks); renderTaskList(); refreshActiveTaskOptions();
       });
@@ -337,6 +405,7 @@ if ('serviceWorker' in navigator) {
     });
     refreshActiveTaskOptions();
   }
+
   function refreshActiveTaskOptions(){
     const d = todayISO();
     ensureDateKey(tasks, d);
@@ -359,14 +428,17 @@ if ('serviceWorker' in navigator) {
     activeTaskSel.value = still ? cur : "";
     activeTaskSel.setAttribute("data-cur", activeTaskSel.value);
   }
+
   function uuid(){ return Math.random().toString(36).slice(2,10) + Math.random().toString(36).slice(2,6); }
   function addTaskForDate(date, title, pri, est, notes){
     ensureDateKey(tasks, date);
     tasks[date].push({ id: uuid(), title: (title||"").trim(), pri: pri||"lo", est: est||"0", notes: (notes||"").trim(), done:false });
     save(STORAGE_TASKS, tasks);
   }
+
   function ensureLogDate(date){ if(!logs[date]) logs[date]=[]; }
   function countDoneToday(){ const d=todayISO(); ensureDateKey(tasks,d); return tasks[d].filter(t=>t.done).length; }
+
   function logPhaseEnd(phase, startISO, endISO, durationSec){
     const dateStr = endISO.slice(0,10);
     ensureLogDate(dateStr);
@@ -378,13 +450,16 @@ if ('serviceWorker' in navigator) {
       if(found) activeTitle = found.title;
     }
     logs[dateStr].push({
-      date: dateStr, phase, start_iso: startISO, end_iso: endISO,
+      date: dateStr,
+      phase, start_iso: startISO, end_iso: endISO,
       duration_sec: Math.max(0, Math.floor(durationSec)),
       tasks_done_snapshot: countDoneToday(),
-      task_id: activeId || "", task_title: activeTitle || ""
+      task_id: activeId || "",
+      task_title: activeTitle || ""
     });
     save(STORAGE_LOGS, logs);
   }
+
   function csvEscape(s){ if(s==null) return ""; const str=String(s); return /[",\n]/.test(str)? '"'+str.replace(/"/g,'""')+'"': str; }
   function exportCSV(rows, filename){
     const blob = new Blob([rows.join("\n")], {type:"text/csv"});
@@ -407,7 +482,8 @@ if ('serviceWorker' in navigator) {
   }
 
   function beep(){
-    try{ if(!settings.beep) return;
+    try{
+      if(!settings.beep) return;
       const ctx = new (window.AudioContext||window.webkitAudioContext)();
       const o = ctx.createOscillator(); const g = ctx.createGain();
       o.type="sine"; o.frequency.setValueAtTime(880, ctx.currentTime);
@@ -419,6 +495,7 @@ if ('serviceWorker' in navigator) {
       setTimeout(()=>ctx.close().catch(()=>{}), 500);
     }catch(e){}
   }
+
   let rafId=null;
   function tick(ts){
     if(!state.running){ state.lastTick=null; return; }
@@ -432,25 +509,29 @@ if ('serviceWorker' in navigator) {
     }
     rafId = requestAnimationFrame(tick);
   }
+
   function startFocus(){
     state.phase="focus"; state.totalSec=Math.max(1,Math.floor(settings.focusMin)*60);
     state.remainingSec=state.totalSec; state.running=true; state.lastTick=null;
     state.currentStartISO = new Date().toISOString();
-    document.getElementById("hint").textContent = pick(hints); document.getElementById("breakIdea").style.display="none";
+    hintEl.textContent = pick(hints); breakIdeaEl.style.display="none";
     cancelAnimationFrame(rafId); rafId=requestAnimationFrame(tick);
     syncTimerUI(); save(STORAGE_SETTINGS, settings);
   }
+
   function startBreak(){
     state.phase="break"; state.totalSec=Math.max(1,Math.floor(settings.breakMin)*60);
     state.remainingSec=state.totalSec; state.running=true; state.lastTick=null;
     state.currentStartISO = new Date().toISOString();
-    document.getElementById("hint").textContent = "Break time — keep it short and refreshing.";
-    const bi = document.getElementById("breakIdea"); bi.textContent = "Break idea: " + pick(breakIdeas); bi.style.display="block";
+    hintEl.textContent = "Break time — keep it short and refreshing.";
+    breakIdeaEl.textContent = "Break idea: " + pick(breakIdeas); breakIdeaEl.style.display="block";
     cancelAnimationFrame(rafId); rafId=requestAnimationFrame(tick);
     syncTimerUI(); save(STORAGE_SETTINGS, settings);
   }
+
   function pause(){ state.running=false; syncTimerUI(); }
-  function reset(){ state.running=false; state.phase="ready"; state.totalSec=0; state.remainingSec=0; state.currentStartISO=null; document.getElementById("breakIdea").style.display="none"; syncTimerUI(); }
+  function reset(){ state.running=false; state.phase="ready"; state.totalSec=0; state.remainingSec=0; state.currentStartISO=null; breakIdeaEl.style.display="none"; syncTimerUI(); }
+
   function onPhaseEnd(){
     const endISO = new Date().toISOString();
     const dur = state.totalSec;
@@ -460,6 +541,7 @@ if ('serviceWorker' in navigator) {
     else if(state.phase==="break"){ state.breaksTaken++; if(settings.auto){ startFocus(); } else { state.phase="ready"; state.running=false; syncTimerUI(); } }
   }
 
+  // Events
   startBtn.addEventListener("click", ()=>{ if(state.phase==="break") startBreak(); else if(state.phase==="focus"){ state.running=true; cancelAnimationFrame(rafId); rafId=requestAnimationFrame(tick); syncTimerUI(); } else startFocus(); });
   pauseBtn.addEventListener("click", pause);
   resetBtn.addEventListener("click", reset);
@@ -474,21 +556,20 @@ if ('serviceWorker' in navigator) {
   activeTaskSel.addEventListener("change", ()=> activeTaskSel.setAttribute("data-cur", activeTaskSel.value));
 
   toTodayBtn.addEventListener("click", ()=>{ viewDate=todayISO(); renderTaskList(); });
-  toTomorrowBtn.addEventListener("click", ()=>{ viewDate = addDays(todayISO(), 1); renderTaskList(); });
+  toTomorrowBtn.addEventListener("click", ()=>{ viewDate=addDays(todayISO(),1); renderTaskList(); });
   autoCarryEl.checked = !!settings.autoCarry;
   autoCarryEl.addEventListener("change", ()=>{ settings.autoCarry = autoCarryEl.checked; save(STORAGE_SETTINGS, settings); });
   carryNowBtn.addEventListener("click", ()=>{
-    const nd = addDays(viewDate, 1);
-    const moved = carryUnfinished(viewDate, nd);
+    const moved = carryUnfinished(viewDate, addDays(viewDate,1));
     renderTaskList();
-    document.getElementById("importTasksMsg").textContent = "Carried over "+moved+" task(s).";
-    setTimeout(()=> document.getElementById("importTasksMsg").textContent="", 2500);
+    importTasksMsg.textContent = "Carried over "+moved+" task(s).";
+    setTimeout(()=> importTasksMsg.textContent="", 2500);
   });
 
   addTaskBtn.addEventListener("click", ()=>{
-    const title = document.getElementById("taskTitle").value; if(!title.trim()) return;
-    addTaskForDate(viewDate, title, document.getElementById("taskPri").value, document.getElementById("taskEst").value, document.getElementById("taskNotes").value);
-    document.getElementById("taskTitle").value=""; document.getElementById("taskNotes").value=""; document.getElementById("taskPri").value="lo"; document.getElementById("taskEst").value="0";
+    const title = taskTitleEl.value; if(!title.trim()) return;
+    addTaskForDate(viewDate, title, taskPriEl.value, taskEstEl.value, taskNotesEl.value);
+    taskTitleEl.value=""; taskNotesEl.value=""; taskPriEl.value="lo"; taskEstEl.value="0";
     renderTaskList();
   });
 
@@ -500,13 +581,14 @@ if ('serviceWorker' in navigator) {
   });
   importTasksBtn.addEventListener("click", ()=>{
     const f = importTasksFile.files && importTasksFile.files[0];
-    if(!f){ document.getElementById("importTasksMsg").textContent="Select a JSON file first."; return; }
+    if(!f){ importTasksMsg.textContent="Select a JSON file first."; return; }
     const reader = new FileReader();
     reader.onload = ()=>{
       try{
         const obj = JSON.parse(String(reader.result||"{}"));
         if(!obj || typeof obj!=="object" || !obj.tasks) throw new Error("Missing 'tasks' object.");
-        const incoming = obj.tasks; const dates = Object.keys(incoming);
+        const incoming = obj.tasks;
+        const dates = Object.keys(incoming);
         dates.forEach(d=>{
           if(!tasks[d]) tasks[d]=[];
           for(const t of incoming[d]){
@@ -517,19 +599,20 @@ if ('serviceWorker' in navigator) {
         });
         save(STORAGE_TASKS, tasks);
         renderTaskList(); refreshActiveTaskOptions();
-        document.getElementById("importTasksMsg").textContent = "Imported tasks for "+Object.keys(incoming).length+" day(s).";
+        importTasksMsg.textContent = "Imported tasks for "+dates.length+" day(s).";
       }catch(err){
-        document.getElementById("importTasksMsg").textContent = "Import failed: " + (err && err.message ? err.message : String(err));
+        importTasksMsg.textContent = "Import failed: " + (err && err.message ? err.message : String(err));
       }
-      setTimeout(()=> document.getElementById("importTasksMsg").textContent="", 4000);
+      setTimeout(()=> importTasksMsg.textContent="", 4000);
     };
-    reader.onerror = ()=>{ document.getElementById("importTasksMsg").textContent = "Import failed to read the file."; };
+    reader.onerror = ()=>{ importTasksMsg.textContent = "Import failed to read the file."; };
     reader.readAsText(f);
   });
 
-  function syncAll(){ syncTimerUI(); renderTaskList(); }
-  syncAll();
-  setInterval(()=>{ if(state.phase==="break" && document.getElementById("breakIdea").style.display!=="none"){ document.getElementById("breakIdea").textContent = "Break idea: " + pick(breakIdeas); }}, 8000);
+  // Initial render + rotating break ideas
+  syncTimerUI();
+  renderTaskList();
+  setInterval(()=>{ if(state.phase==="break" && breakIdeaEl.style.display!=="none"){ breakIdeaEl.textContent = "Break idea: " + pick(breakIdeas); } }, 15000);
 })();
 </script>
 </body>
