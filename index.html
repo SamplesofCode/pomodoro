@@ -1,0 +1,574 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADHD Pomodoro – Minimal (v0.3 PWA)</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<meta name="theme-color" content="#121821">
+<link rel="icon" href="./icons/icon-192.png">
+<!--
+  ADHD Pomodoro – Minimal
+  Version: v0.3 PWA (2025-09-16)
+  PWA additions: manifest + service worker, offline caching for static assets.
+  License: MIT
+-->
+<style>
+  :root { --bg:#0b0f14; --panel:#121821; --muted:#8aa0b3; --text:#eaf2f9; --accent:#7dd3fc; --accent2:#a7f3d0; --danger:#fca5a5; --ok:#a7f3d0; }
+  * { box-sizing: border-box; }
+  html, body { height:100%; margin:0; }
+  body { background:var(--bg); color:var(--text); font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; display:flex; align-items:center; justify-content:center; padding: 16px; }
+  .app { width:100%; max-width: 1100px; background:var(--panel); border-radius: 18px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+  h1 { margin: 0 0 12px; font-size: 1.4rem; letter-spacing:.2px; }
+  .row { display:flex; gap:16px; flex-wrap: wrap; }
+  .card { flex:1; min-width: 300px; background:#0e141c; border:1px solid #1b2735; border-radius: 14px; padding:14px; }
+  .muted { color: var(--muted); font-size: .9rem; }
+  .timer-wrap { display:flex; align-items:center; justify-content:center; padding: 10px 0 0; }
+  .ring { width: 240px; height:240px; position: relative; }
+  .ring svg { transform: rotate(-90deg); }
+  .ring .label { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction: column; text-align:center; }
+  .time { font-size: 2.8rem; line-height:1; letter-spacing:.5px; }
+  .phase { margin-top:6px; font-size: .95rem; color: var(--muted); }
+  .controls { display:flex; gap:10px; justify-content:center; margin-top:12px; flex-wrap: wrap; }
+  button { background:#101826; color:var(--text); border:1px solid #1f2b3a; padding:8px 12px; border-radius:10px; cursor:pointer; }
+  button:hover { border-color:#2d3d52; }
+  .primary { border-color:#2a4158; }
+  .danger { border-color:#5a2a2a; color:#ffdede; }
+  .ok { border-color:#21483d; }
+  .presets { display:flex; gap:8px; flex-wrap: wrap; margin-top:10px; }
+  .preset { font-size:.9rem; }
+  .grid { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
+  label { display:block; font-size:.85rem; color: var(--muted); margin-bottom:4px; }
+  input[type="number"], input[type="text"], input[type="file"], select, textarea { width:100%; padding:8px; border-radius:8px; border:1px solid #1f2b3a; background:#0c1219; color:var(--text); }
+  textarea { resize: vertical; min-height: 60px; }
+  .inline { display:flex; gap:8px; flex-wrap: wrap; align-items:center; }
+  .hint { margin-top:8px; font-size:.9rem; color: var(--accent2); }
+  .footer { margin-top: 14px; color: var(--muted); font-size:.8rem; display:flex; justify-content:space-between; gap:8px; flex-wrap: wrap; }
+  .kpis { display:flex; gap:12px; flex-wrap: wrap; }
+  .kpi { background:#0c1219; border:1px solid #1a2433; padding:8px 10px; border-radius:8px; }
+  .break-idea { margin-top:10px; background:#0c1912; border:1px solid #163121; padding:10px; border-radius:10px; }
+  .tasklist { display:flex; flex-direction: column; gap:8px; max-height: 300px; overflow:auto; padding-right: 4px; }
+  .task { display:grid; grid-template-columns: auto 1fr auto; gap:8px; align-items:start; background:#0c1219; border:1px solid #1a2433; border-radius:10px; padding:8px; }
+  .task .title { font-weight: 600; }
+  .pill { font-size:.75rem; border:1px solid #344a64; padding:2px 6px; border-radius:999px; color:#b9d0e6; }
+  .pill.hi { border-color:#5e2a2a; color:#ffc9c9; }
+  .pill.med { border-color:#6a5a2a; color:#ffe7b3; }
+  .pill.lo { border-color:#1f4a2a; color:#c9ffd7; }
+  .active-select { width:100%; }
+  hr.sep { border-color:#1a2433; margin:12px 0; }
+  .small { font-size:.8rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <h1>ADHD Pomodoro — Minimal <span class="muted">(v0.3 PWA)</span></h1>
+  <div class="row">
+    <!-- Timer/Controls -->
+    <div class="card" style="min-width:320px;">
+      <div class="muted">Timer</div>
+      <div class="inline" style="margin-top:6px;">
+        <label style="flex:1;">
+          <span class="small">Active task (optional)</span>
+          <select id="activeTask" class="active-select"></select>
+        </label>
+      </div>
+      <div class="timer-wrap">
+        <div class="ring">
+          <svg width="240" height="240">
+            <circle cx="120" cy="120" r="104" fill="none" stroke="#1b2735" stroke-width="18"></circle>
+            <circle id="progress" cx="120" cy="120" r="104" fill="none" stroke="url(#g)" stroke-width="18" stroke-linecap="round" stroke-dasharray="653" stroke-dashoffset="653"></circle>
+            <defs>
+              <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#7dd3fc"></stop>
+                <stop offset="100%" stop-color="#a7f3d0"></stop>
+              </linearGradient>
+            </defs>
+          </svg>
+          <div class="label">
+            <div class="time" id="time">00:00</div>
+            <div class="phase" id="phase">Ready</div>
+          </div>
+        </div>
+      </div>
+      <div class="controls">
+        <button id="start" class="primary">Start</button>
+        <button id="pause">Pause</button>
+        <button id="reset" class="danger">Reset</button>
+      </div>
+      <div class="presets">
+        <button class="preset" data-f="10" data-b="2">10/2</button>
+        <button class="preset" data-f="15" data-b="3">15/3</button>
+        <button class="preset" data-f="25" data-b="5">25/5</button>
+        <button class="preset" data-f="40" data-b="10">40/10</button>
+      </div>
+      <div class="grid" style="margin-top:10px;">
+        <div>
+          <label for="focusMin">Focus minutes</label>
+          <input id="focusMin" type="number" min="1" value="25">
+        </div>
+        <div>
+          <label for="breakMin">Break minutes</label>
+          <input id="breakMin" type="number" min="1" value="5">
+        </div>
+      </div>
+      <div class="inline" style="margin-top:10px; align-items:center;">
+        <label class="inline"><input id="beep" type="checkbox"> <span class="small">Beep on phase change</span></label>
+        <label class="inline"><input id="auto" type="checkbox" checked> <span class="small">Auto-switch phases</span></label>
+      </div>
+      <div class="hint" id="hint">Tip: Keep a sticky note for intrusive thoughts.</div>
+      <div class="break-idea" id="breakIdea" style="display:none;"></div>
+      <div class="footer">
+        <div class="kpis">
+          <div class="kpi">Cycle: <span id="cycle">0</span></div>
+          <div class="kpi">Focus Done: <span id="focusCount">0</span></div>
+          <div class="kpi">Breaks Taken: <span id="breakCount">0</span></div>
+        </div>
+        <div class="inline">
+          <button id="exportToday">Export Today (CSV)</button>
+          <button id="exportAll">Export All Logs (CSV)</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Planner / Tasks -->
+    <div class="card">
+      <div class="inline" style="justify-content:space-between;">
+        <div class="muted">Planner</div>
+        <div class="inline">
+          <button id="toToday" class="ok">Today</button>
+          <button id="toTomorrow">Tomorrow</button>
+        </div>
+      </div>
+      <div class="inline small" style="margin-top:6px;">
+        <span>Viewing:</span> <strong id="viewDateLabel"></strong>
+        <label class="inline" title="If on, unfinished Today tasks move to Tomorrow on day change."><input id="autoCarry" type="checkbox"> Auto carry-over</label>
+        <button id="carryNow" title="Move unfinished tasks from this date to the next date.">Carry unfinished → next day</button>
+      </div>
+      <hr class="sep">
+      <div class="inline" style="align-items:flex-start;">
+        <div style="flex:1; min-width:200px;">
+          <label>Task title</label>
+          <input id="taskTitle" type="text" placeholder="Tiny step, e.g., 'Write outline'">
+        </div>
+        <div style="width:140px;">
+          <label>Priority</label>
+          <select id="taskPri">
+            <option value="lo">Low</option>
+            <option value="med">Medium</option>
+            <option value="hi">High</option>
+          </select>
+        </div>
+        <div style="width:160px;">
+          <label>Est. pomodoros</label>
+          <select id="taskEst">
+            <option value="0">—</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4+</option>
+          </select>
+        </div>
+      </div>
+      <div style="margin-top:8px;">
+        <label>Notes (optional)</label>
+        <textarea id="taskNotes" placeholder="Quick context so Future You knows what's next"></textarea>
+      </div>
+      <div class="inline" style="margin-top:8px;">
+        <button id="addTask" class="primary">Add Task</button>
+      </div>
+      <div style="margin-top:12px;" class="muted">Tasks for <span id="tasksDateLabel"></span>:</div>
+      <div class="tasklist" id="taskList"></div>
+      <hr class="sep">
+      <div class="muted">Tasks Backup</div>
+      <div class="inline" style="margin-top:6px;">
+        <button id="exportTasks">Export Tasks (JSON)</button>
+        <input id="importTasksFile" type="file" accept=".json">
+        <button id="importTasks">Import Tasks</button>
+        <span class="small" id="importTasksMsg"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Register the service worker (PWA)
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./service-worker.js').catch(()=>{});
+}
+</script>
+
+<script>
+// ===== The v0.3 app logic (same as delivered earlier) =====
+(function(){
+  const el = (id)=>document.getElementById(id);
+  const todayISO = ()=> new Date().toISOString().slice(0,10);
+  const addDays = (ds, n)=>{ const d = new Date(ds+"T00:00:00"); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
+  const pick = (arr)=> arr[Math.floor(Math.random()*arr.length)];
+
+  const timeEl=el("time"), phaseEl=el("phase"), progressEl=document.getElementById("progress");
+  const startBtn=el("start"), pauseBtn=el("pause"), resetBtn=el("reset");
+  const focusMinEl=el("focusMin"), breakMinEl=el("breakMin");
+  const beepEl=el("beep"), autoEl=el("auto");
+  const cycleEl=el("cycle"), focusCountEl=el("focusCount"), breakCountEl=el("breakCount");
+  const hintEl=el("hint"), breakIdeaEl=el("breakIdea");
+  const exportTodayBtn=el("exportToday"), exportAllBtn=el("exportAll");
+  const activeTaskSel=el("activeTask");
+
+  const toTodayBtn=el("toToday"), toTomorrowBtn=el("toTomorrow");
+  const viewDateLabel=el("viewDateLabel"), tasksDateLabel=el("tasksDateLabel");
+  const autoCarryEl=el("autoCarry"), carryNowBtn=el("carryNow");
+  const taskTitleEl=el("taskTitle"), taskPriEl=el("taskPri"), taskEstEl=el("taskEst"), taskNotesEl=el("taskNotes");
+  const addTaskBtn=el("addTask"), taskListEl=el("taskList");
+  const exportTasksBtn=el("exportTasks"), importTasksBtn=el("importTasks"), importTasksFile=el("importTasksFile"), importTasksMsg=el("importTasksMsg");
+
+  const R = 104; const circumference = 2*Math.PI*R;
+  progressEl.style.strokeDasharray = String(circumference);
+
+  const STORAGE_SETTINGS = "adhd_pomo_settings_v03";
+  const STORAGE_LOGS = "adhd_pomo_logs_v03";
+  const STORAGE_TASKS = "adhd_pomo_tasks_v03";
+  const STORAGE_META = "adhd_pomo_meta_v03";
+  const hints = [
+    "Tip: Keep a sticky note for intrusive thoughts.",
+    "Breaks are for dopamine: queue a song for later!",
+    "Tiny steps win: 'Open doc' > 'Write report'.",
+    "If you drifted: reset, no guilt, continue.",
+    "Make the timer visible in your workspace.",
+    "Say your next step out loud (body-doubling helps)."
+  ];
+  const breakIdeas = [
+    "Stand + stretch for one song.",
+    "Get a glass of water; 10 slow sips.",
+    "Write down 1 intrusive thought for later.",
+    "Do 10 squats or wall pushups.",
+    "Look outside and name 3 things you see.",
+    "One-minute box breathing: 4-4-4-4.",
+    "Tidy one object on your desk.",
+    "Text a friend 'hi' (just hello).",
+    "Pet the dog/cat or stretch your hands.",
+    "Walk to the furthest point and back."
+  ];
+
+  let settings = { focusMin:25, breakMin:5, beep:false, auto:true, autoCarry:false };
+  let logs = {};
+  let tasks = {};
+  let meta = { lastSeenDate: todayISO() };
+  let viewDate = todayISO();
+
+  let state = { phase:"ready", running:false, totalSec:0, remainingSec:0, cycles:0, focusDone:0, breaksTaken:0, lastTick:null, currentStartISO:null };
+
+  function save(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+  function load(k,def){ try{ const raw=localStorage.getItem(k); return raw? JSON.parse(raw): def; }catch(e){ return def; } }
+  function persistAll(){ save(STORAGE_SETTINGS,settings); save(STORAGE_LOGS,logs); save(STORAGE_TASKS,tasks); save(STORAGE_META,meta); }
+
+  settings = load(STORAGE_SETTINGS, settings);
+  logs = load(STORAGE_LOGS, logs);
+  tasks = load(STORAGE_TASKS, tasks);
+  meta = load(STORAGE_META, meta);
+  viewDate = todayISO();
+
+  function ensureDateKey(obj, date){ if(!obj[date]) obj[date]=[]; }
+  function carryUnfinished(fromDate, toDate){
+    ensureDateKey(tasks, fromDate); ensureDateKey(tasks, toDate);
+    const remaining = []; const moved = [];
+    for(const t of tasks[fromDate]){ if(t.done) remaining.push(t); else { moved.push({...t}); } }
+    tasks[fromDate] = remaining;
+    tasks[toDate] = [...moved, ...(tasks[toDate]||[])];
+    save(STORAGE_TASKS, tasks);
+    return moved.length;
+  }
+  function maybeAutoCarry(){
+    const today = todayISO();
+    if(meta.lastSeenDate !== today && settings.autoCarry){
+      const moved = carryUnfinished(meta.lastSeenDate, (d=>{const dt=new Date(d+"T00:00:00"); dt.setDate(dt.getDate()+1); return dt.toISOString().slice(0,10);})(meta.lastSeenDate));
+    }
+    meta.lastSeenDate = today; save(STORAGE_META, meta);
+  }
+  maybeAutoCarry();
+
+  function fmt(sec){ const m=Math.floor(sec/60), s=sec%60; return String(m).padStart(2,"0")+":"+String(s).padStart(2,"0"); }
+  function setRing(remain,total){ const ratio = total>0 ? (1 - remain/total):0; progressEl.style.strokeDashoffset = String(circumference*(1-ratio)); }
+  function syncTimerUI(){
+    const sec = state.remainingSec || (state.phase==="focus" ? settings.focusMin*60 : state.phase==="break" ? settings.breakMin*60 : 0);
+    timeEl.textContent = fmt(sec);
+    phaseEl.textContent = state.phase.charAt(0).toUpperCase()+state.phase.slice(1);
+    setRing(state.remainingSec, state.totalSec);
+    focusMinEl.value = settings.focusMin; breakMinEl.value = settings.breakMin;
+    beepEl.checked = settings.beep; autoEl.checked = settings.auto;
+    document.getElementById("cycle").textContent = String(state.cycles);
+    document.getElementById("focusCount").textContent = String(state.focusDone);
+    document.getElementById("breakCount").textContent = String(state.breaksTaken);
+    startBtn.textContent = state.phase === "break" ? "Start Break" : state.phase === "focus" ? (state.running ? "Running…" : "Resume") : "Start Focus";
+  }
+  function renderTaskList(){
+    ensureDateKey(tasks, viewDate);
+    document.getElementById("tasksDateLabel").textContent = viewDate;
+    document.getElementById("viewDateLabel").textContent = viewDate + (viewDate === todayISO() ? " (Today)" : viewDate === (d=>{const dt=new Date(todayISO()+"T00:00:00"); dt.setDate(dt.getDate()+1); return dt.toISOString().slice(0,10);})() ? " (Tomorrow)" : "");
+    taskListEl.innerHTML = "";
+    const list = tasks[viewDate];
+    list.forEach((t, idx)=>{
+      const row = document.createElement("div"); row.className="task";
+      const cb = document.createElement("input"); cb.type="checkbox"; cb.checked=!!t.done;
+      cb.addEventListener("change", ()=>{ t.done = cb.checked; save(STORAGE_TASKS,tasks); refreshActiveTaskOptions(); });
+      const body = document.createElement("div");
+      const title = document.createElement("div"); title.className="title"; title.textContent=t.title||"(untitled)";
+      const metaLine = document.createElement("div");
+      const pri = document.createElement("span"); pri.className = "pill "+(t.pri||"lo"); pri.textContent = (t.pri||"lo").toUpperCase();
+      const est = document.createElement("span"); est.className = "pill"; est.textContent = (t.est && t.est!=="0") ? (t.est+" pomo") : "—";
+      metaLine.appendChild(pri); metaLine.appendChild(document.createTextNode(" ")); metaLine.appendChild(est);
+      const notes = document.createElement("div"); notes.className="small"; notes.textContent = t.notes||"";
+      body.appendChild(title); body.appendChild(metaLine); if(t.notes) body.appendChild(notes);
+
+      const actions = document.createElement("div");
+      const del = document.createElement("button"); del.textContent="×"; del.title="Delete";
+      del.addEventListener("click", ()=>{ list.splice(idx,1); save(STORAGE_TASKS,tasks); renderTaskList(); refreshActiveTaskOptions(); });
+      const mv = document.createElement("button"); mv.textContent="→"; mv.title="Move to next day";
+      mv.addEventListener("click", ()=>{
+        const nd = (d=>{const dt=new Date(viewDate+"T00:00:00"); dt.setDate(dt.getDate()+1); return dt.toISOString().slice(0,10);})();
+        ensureDateKey(tasks, nd);
+        tasks[nd].unshift({...t});
+        list.splice(idx,1);
+        save(STORAGE_TASKS,tasks); renderTaskList(); refreshActiveTaskOptions();
+      });
+      actions.appendChild(mv); actions.appendChild(del);
+
+      row.appendChild(cb); row.appendChild(body); row.appendChild(actions);
+      taskListEl.appendChild(row);
+    });
+    refreshActiveTaskOptions();
+  }
+  function refreshActiveTaskOptions(){
+    const d = todayISO();
+    ensureDateKey(tasks, d);
+    const options = [];
+    options.push({id:"", title:"— No active task —"});
+    const unfinished = tasks[d].filter(t=>!t.done);
+    const finished = tasks[d].filter(t=>t.done);
+    unfinished.forEach(t=> options.push({id:t.id, title:t.title}));
+    if(finished.length){ options.push({id:"__sep__", title:"— completed —"}); finished.forEach(t=> options.push({id:t.id, title:t.title})); }
+    activeTaskSel.innerHTML = "";
+    options.forEach(o=>{
+      const opt = document.createElement("option");
+      opt.value = o.id || "";
+      opt.textContent = o.title;
+      if(o.id === "__sep__"){ opt.disabled=true; }
+      activeTaskSel.appendChild(opt);
+    });
+    const cur = activeTaskSel.getAttribute("data-cur") || "";
+    const still = options.find(o=>o.id===cur);
+    activeTaskSel.value = still ? cur : "";
+    activeTaskSel.setAttribute("data-cur", activeTaskSel.value);
+  }
+  function uuid(){ return Math.random().toString(36).slice(2,10) + Math.random().toString(36).slice(2,6); }
+  function addTaskForDate(date, title, pri, est, notes){
+    ensureDateKey(tasks, date);
+    tasks[date].push({ id: uuid(), title: (title||"").trim(), pri: pri||"lo", est: est||"0", notes: (notes||"").trim(), done:false });
+    save(STORAGE_TASKS, tasks);
+  }
+  function ensureLogDate(date){ if(!logs[date]) logs[date]=[]; }
+  function countDoneToday(){ const d=todayISO(); ensureDateKey(tasks,d); return tasks[d].filter(t=>t.done).length; }
+  function logPhaseEnd(phase, startISO, endISO, durationSec){
+    const dateStr = endISO.slice(0,10);
+    ensureLogDate(dateStr);
+    const activeId = activeTaskSel.value || "";
+    let activeTitle = "";
+    if(activeId){
+      const d = todayISO(); ensureDateKey(tasks,d);
+      const found = tasks[d].find(t=>t.id===activeId);
+      if(found) activeTitle = found.title;
+    }
+    logs[dateStr].push({
+      date: dateStr, phase, start_iso: startISO, end_iso: endISO,
+      duration_sec: Math.max(0, Math.floor(durationSec)),
+      tasks_done_snapshot: countDoneToday(),
+      task_id: activeId || "", task_title: activeTitle || ""
+    });
+    save(STORAGE_LOGS, logs);
+  }
+  function csvEscape(s){ if(s==null) return ""; const str=String(s); return /[",\n]/.test(str)? '"'+str.replace(/"/g,'""')+'"': str; }
+  function exportCSV(rows, filename){
+    const blob = new Blob([rows.join("\n")], {type:"text/csv"});
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename;
+    document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+  function exportToday(){
+    const d = todayISO(); const rows = logs[d]||[];
+    const header = ["date","phase","start_iso","end_iso","duration_sec","tasks_done_snapshot","task_id","task_title"];
+    const out = [header.join(",")];
+    rows.forEach(r=> out.push([r.date,r.phase,r.start_iso,r.end_iso,r.duration_sec,r.tasks_done_snapshot,r.task_id,r.task_title].map(csvEscape).join(",")));
+    exportCSV(out, "PomodoroLog_"+d+".csv");
+  }
+  function exportAll(){
+    const header = ["date","phase","start_iso","end_iso","duration_sec","tasks_done_snapshot","task_id","task_title"];
+    const out = [header.join(",")];
+    const dates = Object.keys(logs).sort();
+    dates.forEach(d=> (logs[d]||[]).forEach(r=> out.push([r.date,r.phase,r.start_iso,r.end_iso,r.duration_sec,r.tasks_done_snapshot,r.task_id,r.task_title].map(csvEscape).join(","))));
+    exportCSV(out, "PomodoroLogs_ALL.csv");
+  }
+
+  function beep(){
+    try{ if(!settings.beep) return;
+      const ctx = new (window.AudioContext||window.webkitAudioContext)();
+      const o = ctx.createOscillator(); const g = ctx.createGain();
+      o.type="sine"; o.frequency.setValueAtTime(880, ctx.currentTime);
+      o.connect(g); g.connect(ctx.destination);
+      g.gain.setValueAtTime(0.001, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+      o.start(); o.stop(ctx.currentTime + 0.26);
+      setTimeout(()=>ctx.close().catch(()=>{}), 500);
+    }catch(e){}
+  }
+  let rafId=null;
+  function tick(ts){
+    if(!state.running){ state.lastTick=null; return; }
+    if(!state.lastTick) state.lastTick = ts;
+    const delta = Math.floor((ts - state.lastTick)/1000);
+    if(delta>=1){
+      state.remainingSec = Math.max(0, state.remainingSec - delta);
+      state.lastTick = ts;
+      syncTimerUI();
+      if(state.remainingSec===0){ onPhaseEnd(); return; }
+    }
+    rafId = requestAnimationFrame(tick);
+  }
+  function startFocus(){
+    state.phase="focus"; state.totalSec=Math.max(1,Math.floor(settings.focusMin)*60);
+    state.remainingSec=state.totalSec; state.running=true; state.lastTick=null;
+    state.currentStartISO = new Date().toISOString();
+    document.getElementById("hint").textContent = pick(hints); document.getElementById("breakIdea").style.display="none";
+    cancelAnimationFrame(rafId); rafId=requestAnimationFrame(tick);
+    syncTimerUI(); save(STORAGE_SETTINGS, settings);
+  }
+  function startBreak(){
+    state.phase="break"; state.totalSec=Math.max(1,Math.floor(settings.breakMin)*60);
+    state.remainingSec=state.totalSec; state.running=true; state.lastTick=null;
+    state.currentStartISO = new Date().toISOString();
+    document.getElementById("hint").textContent = "Break time — keep it short and refreshing.";
+    const bi = document.getElementById("breakIdea"); bi.textContent = "Break idea: " + pick(breakIdeas); bi.style.display="block";
+    cancelAnimationFrame(rafId); rafId=requestAnimationFrame(tick);
+    syncTimerUI(); save(STORAGE_SETTINGS, settings);
+  }
+  function pause(){ state.running=false; syncTimerUI(); }
+  function reset(){ state.running=false; state.phase="ready"; state.totalSec=0; state.remainingSec=0; state.currentStartISO=null; document.getElementById("breakIdea").style.display="none"; syncTimerUI(); }
+  function onPhaseEnd(){
+    const endISO = new Date().toISOString();
+    const dur = state.totalSec;
+    if(state.currentStartISO){ logPhaseEnd(state.phase, state.currentStartISO, endISO, dur); }
+    beep();
+    if(state.phase==="focus"){ state.focusDone++; state.cycles++; if(settings.auto){ startBreak(); } else { state.phase="ready"; state.running=false; syncTimerUI(); } }
+    else if(state.phase==="break"){ state.breaksTaken++; if(settings.auto){ startFocus(); } else { state.phase="ready"; state.running=false; syncTimerUI(); } }
+  }
+
+  startBtn.addEventListener("click", ()=>{ if(state.phase==="break") startBreak(); else if(state.phase==="focus"){ state.running=true; cancelAnimationFrame(rafId); rafId=requestAnimationFrame(tick); syncTimerUI(); } else startFocus(); });
+  pauseBtn.addEventListener("click", pause);
+  resetBtn.addEventListener("click", reset);
+  document.querySelectorAll(".preset").forEach(b=> b.addEventListener("click", ()=>{ settings.focusMin = parseInt(b.getAttribute("data-f"),10); settings.breakMin = parseInt(b.getAttribute("data-b"),10); save(STORAGE_SETTINGS, settings); syncTimerUI(); }));
+  focusMinEl.addEventListener("change", ()=>{ settings.focusMin=Math.max(1,parseInt(focusMinEl.value||"25",10)); save(STORAGE_SETTINGS, settings); syncTimerUI(); });
+  breakMinEl.addEventListener("change", ()=>{ settings.breakMin=Math.max(1,parseInt(breakMinEl.value||"5",10)); save(STORAGE_SETTINGS, settings); syncTimerUI(); });
+  beepEl.addEventListener("change", ()=>{ settings.beep=beepEl.checked; save(STORAGE_SETTINGS, settings); });
+  autoEl.addEventListener("change", ()=>{ settings.auto=autoEl.checked; save(STORAGE_SETTINGS, settings); });
+
+  exportTodayBtn.addEventListener("click", exportToday);
+  exportAllBtn.addEventListener("click", exportAll);
+  activeTaskSel.addEventListener("change", ()=> activeTaskSel.setAttribute("data-cur", activeTaskSel.value));
+
+  const toTodayBtn = document.getElementById("toToday"), toTomorrowBtn = document.getElementById("toTomorrow");
+  toTodayBtn.addEventListener("click", ()=>{ viewDate=todayISO(); renderTaskList(); });
+  toTomorrowBtn.addEventListener("click", ()=>{ const dt=new Date(todayISO()+"T00:00:00"); dt.setDate(dt.getDate()+1); viewDate = dt.toISOString().slice(0,10); renderTaskList(); });
+  const autoCarryEl = document.getElementById("autoCarry"), carryNowBtn = document.getElementById("carryNow");
+  autoCarryEl.checked = !!settings.autoCarry;
+  autoCarryEl.addEventListener("change", ()=>{ settings.autoCarry = autoCarryEl.checked; save(STORAGE_SETTINGS, settings); });
+  carryNowBtn.addEventListener("click", ()=>{
+    const nd = (d=>{const dt=new Date(viewDate+"T00:00:00"); dt.setDate(dt.getDate()+1); return dt.toISOString().slice(0,10);})();
+    const moved = (function(){
+      const fromDate=viewDate, toDate=nd;
+      const ensure=(o,k)=>{ if(!o[k]) o[k]=[]; };
+      ensure(tasks, fromDate); ensure(tasks,toDate);
+      const remaining=[]; const moved=[];
+      for(const t of tasks[fromDate]){ if(t.done) remaining.push(t); else moved.push({...t}); }
+      tasks[fromDate]=remaining; tasks[toDate]=[...moved, ...(tasks[toDate]||[])];
+      save(STORAGE_TASKS, tasks);
+      return moved.length;
+    })();
+    renderTaskList();
+    document.getElementById("importTasksMsg").textContent = "Carried over "+moved+" task(s).";
+    setTimeout(()=> document.getElementById("importTasksMsg").textContent="", 2500);
+  });
+
+  const addTaskBtn = document.getElementById("addTask");
+  addTaskBtn.addEventListener("click", ()=>{
+    const title = document.getElementById("taskTitle").value; if(!title.trim()) return;
+    (function(date, title, pri, est, notes){
+      const ensure=(o,k)=>{ if(!o[k]) o[k]=[]; };
+      ensure(tasks, date);
+      const uuid = ()=> Math.random().toString(36).slice(2,10) + Math.random().toString(36).slice(2,6);
+      tasks[date].push({ id: uuid(), title: (title||"").trim(), pri: pri||"lo", est: est||"0", notes: (notes||"").trim(), done:false });
+      save(STORAGE_TASKS, tasks);
+    })(viewDate, title, document.getElementById("taskPri").value, document.getElementById("taskEst").value, document.getElementById("taskNotes").value);
+    document.getElementById("taskTitle").value=""; document.getElementById("taskNotes").value=""; document.getElementById("taskPri").value="lo"; document.getElementById("taskEst").value="0";
+    renderTaskList();
+  });
+
+  const exportTasksBtn = document.getElementById("exportTasks");
+  exportTasksBtn.addEventListener("click", ()=>{
+    const payload = { version:"v0.3", exported_at: new Date().toISOString(), tasks };
+    const blob = new Blob([JSON.stringify(payload,null,2)], {type:"application/json"});
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "PomodoroTasks_"+todayISO()+".json";
+    document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  });
+  const importTasksBtn = document.getElementById("importTasks"), importTasksFile = document.getElementById("importTasksFile");
+  importTasksBtn.addEventListener("click", ()=>{
+    const f = importTasksFile.files && importTasksFile.files[0];
+    if(!f){ document.getElementById("importTasksMsg").textContent="Select a JSON file first."; return; }
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      try{
+        const obj = JSON.parse(String(reader.result||"{}"));
+        if(!obj || typeof obj!=="object" || !obj.tasks) throw new Error("Missing 'tasks' object.");
+        const incoming = obj.tasks; const dates = Object.keys(incoming);
+        dates.forEach(d=>{
+          if(!tasks[d]) tasks[d]=[];
+          for(const t of incoming[d]){
+            const item = {...t};
+            if(!item.id) item.id = Math.random().toString(36).slice(2,10) + Math.random().toString(36).slice(2,6);
+            tasks[d].push(item);
+          }
+        });
+        save(STORAGE_TASKS, tasks);
+        renderTaskList(); refreshActiveTaskOptions();
+        document.getElementById("importTasksMsg").textContent = "Imported tasks for "+Object.keys(incoming).length+" day(s).";
+      }catch(err){
+        document.getElementById("importTasksMsg").textContent = "Import failed: " + (err && err.message ? err.message : String(err));
+      }
+      setTimeout(()=> document.getElementById("importTasksMsg").textContent="", 4000);
+    };
+    reader.onerror = ()=>{ document.getElementById("importTasksMsg").textContent = "Import failed to read the file."; };
+    reader.readAsText(f);
+  });
+
+  function maybeAutoCarryWrap(){
+    const today = todayISO();
+    if(meta.lastSeenDate !== today && settings.autoCarry){
+      const dt=new Date(meta.lastSeenDate+"T00:00:00"); dt.setDate(dt.getDate()+1);
+      const next = dt.toISOString().slice(0,10);
+      (function(fromDate,toDate){
+        const ensure=(o,k)=>{ if(!o[k]) o[k]=[]; };
+        ensure(tasks, fromDate); ensure(tasks, toDate);
+        const remaining=[]; const moved=[];
+        for(const t of tasks[fromDate]){ if(t.done) remaining.push(t); else moved.push({...t}); }
+        tasks[fromDate]=remaining; tasks[toDate]=[...moved, ...(tasks[toDate]||[])];
+        save(STORAGE_TASKS, tasks);
+      })(meta.lastSeenDate, next);
+    }
+    meta.lastSeenDate = today; save(STORAGE_META, meta);
+  }
+  maybeAutoCarryWrap();
+
+  function syncAll(){ syncTimerUI(); renderTaskList(); }
+  syncAll();
+  setInterval(()=>{ if(state.phase==="break" && document.getElementById("breakIdea").style.display!=="none"){ document.getElementById("breakIdea").textContent = "Break idea: " + pick(breakIdeas); } }, 15000);
+})();
+</script>
+</body>
+</html>
