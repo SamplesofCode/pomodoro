@@ -17,7 +17,7 @@
   :root { --bg:#0b0f14; --panel:#121821; --muted:#8aa0b3; --text:#eaf2f9; --accent:#7dd3fc; --accent2:#a7f3d0; --danger:#fca5a5; --ok:#a7f3d0; }
   * { box-sizing: border-box; }
   html, body { height:100%; margin:0; }
-  body { background:var(--bg); color:var(--text); font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; display:flex; align-items:center; justify-content:center; padding: 16px; }
+  body { background:var(--bg); color:var(--text); font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; display:flex; align-items:center; justify-content:center; padding: 16px; min-height:100vh; }
   .app { width:100%; max-width: 1100px; background:var(--panel); border-radius: 18px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
   h1 { margin: 0 0 12px; font-size: 1.4rem; letter-spacing:.2px; }
   .row { display:flex; gap:16px; flex-wrap: wrap; }
@@ -303,7 +303,7 @@ if ('serviceWorker' in navigator) {
   function renderTaskList(){
     ensureDateKey(tasks, viewDate);
     document.getElementById("tasksDateLabel").textContent = viewDate;
-    document.getElementById("viewDateLabel").textContent = viewDate + (viewDate === todayISO() ? " (Today)" : viewDate === (d=>{const dt=new Date(todayISO()+"T00:00:00"); dt.setDate(dt.getDate()+1); return dt.toISOString().slice(0,10);})() ? " (Tomorrow)" : "");
+    document.getElementById("viewDateLabel").textContent = viewDate + (viewDate === todayISO() ? " (Today)" : viewDate === addDays(todayISO(),1) ? " (Tomorrow)" : "");
     taskListEl.innerHTML = "";
     const list = tasks[viewDate];
     list.forEach((t, idx)=>{
@@ -324,7 +324,7 @@ if ('serviceWorker' in navigator) {
       del.addEventListener("click", ()=>{ list.splice(idx,1); save(STORAGE_TASKS,tasks); renderTaskList(); refreshActiveTaskOptions(); });
       const mv = document.createElement("button"); mv.textContent="→"; mv.title="Move to next day";
       mv.addEventListener("click", ()=>{
-        const nd = (d=>{const dt=new Date(viewDate+"T00:00:00"); dt.setDate(dt.getDate()+1); return dt.toISOString().slice(0,10);})();
+        const nd = addDays(viewDate, 1);
         ensureDateKey(tasks, nd);
         tasks[nd].unshift({...t});
         list.splice(idx,1);
@@ -473,51 +473,31 @@ if ('serviceWorker' in navigator) {
   exportAllBtn.addEventListener("click", exportAll);
   activeTaskSel.addEventListener("change", ()=> activeTaskSel.setAttribute("data-cur", activeTaskSel.value));
 
-  const toTodayBtn = document.getElementById("toToday"), toTomorrowBtn = document.getElementById("toTomorrow");
   toTodayBtn.addEventListener("click", ()=>{ viewDate=todayISO(); renderTaskList(); });
-  toTomorrowBtn.addEventListener("click", ()=>{ const dt=new Date(todayISO()+"T00:00:00"); dt.setDate(dt.getDate()+1); viewDate = dt.toISOString().slice(0,10); renderTaskList(); });
-  const autoCarryEl = document.getElementById("autoCarry"), carryNowBtn = document.getElementById("carryNow");
+  toTomorrowBtn.addEventListener("click", ()=>{ viewDate = addDays(todayISO(), 1); renderTaskList(); });
   autoCarryEl.checked = !!settings.autoCarry;
   autoCarryEl.addEventListener("change", ()=>{ settings.autoCarry = autoCarryEl.checked; save(STORAGE_SETTINGS, settings); });
   carryNowBtn.addEventListener("click", ()=>{
-    const nd = (d=>{const dt=new Date(viewDate+"T00:00:00"); dt.setDate(dt.getDate()+1); return dt.toISOString().slice(0,10);})();
-    const moved = (function(){
-      const fromDate=viewDate, toDate=nd;
-      const ensure=(o,k)=>{ if(!o[k]) o[k]=[]; };
-      ensure(tasks, fromDate); ensure(tasks,toDate);
-      const remaining=[]; const moved=[];
-      for(const t of tasks[fromDate]){ if(t.done) remaining.push(t); else moved.push({...t}); }
-      tasks[fromDate]=remaining; tasks[toDate]=[...moved, ...(tasks[toDate]||[])];
-      save(STORAGE_TASKS, tasks);
-      return moved.length;
-    })();
+    const nd = addDays(viewDate, 1);
+    const moved = carryUnfinished(viewDate, nd);
     renderTaskList();
     document.getElementById("importTasksMsg").textContent = "Carried over "+moved+" task(s).";
     setTimeout(()=> document.getElementById("importTasksMsg").textContent="", 2500);
   });
 
-  const addTaskBtn = document.getElementById("addTask");
   addTaskBtn.addEventListener("click", ()=>{
     const title = document.getElementById("taskTitle").value; if(!title.trim()) return;
-    (function(date, title, pri, est, notes){
-      const ensure=(o,k)=>{ if(!o[k]) o[k]=[]; };
-      ensure(tasks, date);
-      const uuid = ()=> Math.random().toString(36).slice(2,10) + Math.random().toString(36).slice(2,6);
-      tasks[date].push({ id: uuid(), title: (title||"").trim(), pri: pri||"lo", est: est||"0", notes: (notes||"").trim(), done:false });
-      save(STORAGE_TASKS, tasks);
-    })(viewDate, title, document.getElementById("taskPri").value, document.getElementById("taskEst").value, document.getElementById("taskNotes").value);
+    addTaskForDate(viewDate, title, document.getElementById("taskPri").value, document.getElementById("taskEst").value, document.getElementById("taskNotes").value);
     document.getElementById("taskTitle").value=""; document.getElementById("taskNotes").value=""; document.getElementById("taskPri").value="lo"; document.getElementById("taskEst").value="0";
     renderTaskList();
   });
 
-  const exportTasksBtn = document.getElementById("exportTasks");
   exportTasksBtn.addEventListener("click", ()=>{
     const payload = { version:"v0.3", exported_at: new Date().toISOString(), tasks };
     const blob = new Blob([JSON.stringify(payload,null,2)], {type:"application/json"});
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "PomodoroTasks_"+todayISO()+".json";
     document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   });
-  const importTasksBtn = document.getElementById("importTasks"), importTasksFile = document.getElementById("importTasksFile");
   importTasksBtn.addEventListener("click", ()=>{
     const f = importTasksFile.files && importTasksFile.files[0];
     if(!f){ document.getElementById("importTasksMsg").textContent="Select a JSON file first."; return; }
@@ -547,27 +527,9 @@ if ('serviceWorker' in navigator) {
     reader.readAsText(f);
   });
 
-  function maybeAutoCarryWrap(){
-    const today = todayISO();
-    if(meta.lastSeenDate !== today && settings.autoCarry){
-      const dt=new Date(meta.lastSeenDate+"T00:00:00"); dt.setDate(dt.getDate()+1);
-      const next = dt.toISOString().slice(0,10);
-      (function(fromDate,toDate){
-        const ensure=(o,k)=>{ if(!o[k]) o[k]=[]; };
-        ensure(tasks, fromDate); ensure(tasks, toDate);
-        const remaining=[]; const moved=[];
-        for(const t of tasks[fromDate]){ if(t.done) remaining.push(t); else moved.push({...t}); }
-        tasks[fromDate]=remaining; tasks[toDate]=[...moved, ...(tasks[toDate]||[])];
-        save(STORAGE_TASKS, tasks);
-      })(meta.lastSeenDate, next);
-    }
-    meta.lastSeenDate = today; save(STORAGE_META, meta);
-  }
-  maybeAutoCarryWrap();
-
   function syncAll(){ syncTimerUI(); renderTaskList(); }
   syncAll();
-  setInterval(()=>{ if(state.phase==="break" && document.getElementById("breakIdea").style.display!=="none"){ document.getElementById("breakIdea").textContent = "Break idea: " + pick(breakIdeas); } }, 15000);
+  setInterval(()=>{ if(state.phase==="break" && document.getElementById("breakIdea").style.display!=="none"){ document.getElementById("breakIdea").textContent = "Break idea: " + pick(breakIdeas); }}, 8000);
 })();
 </script>
 </body>
