@@ -115,6 +115,61 @@
     .ring { width: 200px; height: 200px; }
     .time { font-size: 2.2rem; }
   }
+/* ===== Fluid scaling tied to window size ===== */
+/* Scale between 72% and 100% based on the smaller of viewport width/height */
+:root{
+  /* 480x900 is our “comfortable” reference size; adjust if you like */
+  --ui-scale: clamp(
+    0.72,
+    min( calc(100dvw / 480), calc(100dvh / 900) ),
+    1
+  );
+}
+
+/* Headline & basics */
+h1 { font-size: clamp(1.1rem, calc(1.4rem * var(--ui-scale)), 1.4rem); }
+.card { padding: clamp(12px, calc(14px * var(--ui-scale)), 16px); }
+label, .muted, .small { font-size: clamp(.78rem, calc(.9rem * var(--ui-scale)), .9rem); }
+
+/* Buttons and inputs */
+button {
+  font-size: clamp(.85rem, calc(1rem * var(--ui-scale)), 1rem);
+  padding: clamp(6px, calc(8px * var(--ui-scale)), 10px) clamp(10px, calc(12px * var(--ui-scale)), 14px);
+  border-radius: clamp(8px, calc(10px * var(--ui-scale)), 12px);
+}
+input[type="number"], input[type="text"], input[type="file"], select, textarea {
+  font-size: clamp(.9rem, calc(1rem * var(--ui-scale)), 1rem);
+  padding: clamp(6px, calc(8px * var(--ui-scale)), 10px);
+  border-radius: clamp(6px, calc(8px * var(--ui-scale)), 10px);
+}
+
+/* Preset chips & KPI pills */
+.preset { font-size: clamp(.8rem, calc(.9rem * var(--ui-scale)), .95rem); }
+.kpi { padding: clamp(6px, calc(8px * var(--ui-scale)), 10px) clamp(8px, calc(10px * var(--ui-scale)), 12px); }
+
+/* Timer ring: scale the whole widget (SVG + label) together */
+.ring {
+  width: 240px; height: 240px;            /* keep the intrinsic size */
+  transform: scale(var(--ui-scale));       /* shrink/grow as needed */
+  transform-origin: center;
+}
+/* Timer text sizes follow scale but never get too tiny */
+.time  { font-size: clamp(1.8rem, calc(2.8rem * var(--ui-scale)), 2.8rem); }
+.phase { font-size: clamp(.8rem,  calc(.95rem * var(--ui-scale)), .95rem); }
+
+/* Task list spacing */
+.task { gap: clamp(6px, calc(8px * var(--ui-scale)), 10px); padding: clamp(6px, calc(8px * var(--ui-scale)), 10px); }
+.task .title { font-size: clamp(.95rem, calc(1.05rem * var(--ui-scale)), 1.05rem); }
+.pill { font-size: clamp(.68rem, calc(.75rem * var(--ui-scale)), .75rem); padding: 2px clamp(4px, calc(6px * var(--ui-scale)), 8px); }
+
+/* Keep the short-window safeguard too */
+@media (max-width: 600px), (max-height: 700px) {
+  body {
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: env(safe-area-inset-top, 20px);
+  }
+}
 </style>
 </head>
 <body>
