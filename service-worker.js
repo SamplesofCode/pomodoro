@@ -1,5 +1,5 @@
 // ADHD Pomodoro PWA service worker (v0.3.1)
-const CACHE = 'pomodoro-v0-3-1';  // <-- bump this every time you ship
+const CACHE = 'pomodoro-v0-3-2';  // <-- bump this every time you ship
 const ASSETS = [
   './',
   './index.html',
